@@ -17,16 +17,27 @@ import uvicorn
 from typing import Optional
 from datetime import datetime
 import os
+import sys
 import re
 import uuid
 from minio import Minio
+import RAG.rag as rag  # 新增：导入 RAG 模块
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'rag')))
+from config import Config  # 导入配置文件
+
+import torch
+from transformers import AutoModel, AutoTokenizer
+from PIL import Image
+import uvicorn
+from decouple import config as env_config
+
 
 from task_db import TaskDB
 
 # 初始化 FastAPI 应用
 app = FastAPI(
-    title="MinerU Tianshu API",
-    description="天枢 - 企业级 AI 数据预处理平台 | 支持文档、图片、音频、视频等多模态数据处理",
+    title="Flex AI API",
+    description="Flex MinerU Tianshu - AI data preprocessing platform for documents, images, audio, and video.",
     version="1.0.0",
 )
 
@@ -43,7 +54,7 @@ app.add_middleware(
 db = TaskDB()
 
 # 配置输出目录
-OUTPUT_DIR = Path("/tmp/mineru_tianshu_output")
+OUTPUT_DIR = Path(Config.ocr_output_dir)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # MinIO 配置
@@ -132,22 +143,22 @@ def process_markdown_images(md_content: str, image_dir: Path, upload_images: boo
 async def root():
     """API根路径"""
     return {
-        "service": "MinerU Tianshu",
+        "service": "Flex MinerU Tianshu API",
         "version": "1.0.0",
-        "description": "天枢 - 企业级 AI 数据预处理平台",
-        "features": "文档、图片、音频、视频等多模态数据处理",
+        "description": "Flex MinerU Tianshu - AI data preprocessing platform",
+        "features": "Document, Image, Audio, Video processing with OCR and RAG capabilities",
         "docs": "/docs",
     }
 
 
 @app.post("/api/v1/tasks/submit")
 async def submit_task(
-    file: UploadFile = File(..., description="文件: PDF/图片/Office/HTML/音频/视频等多种格式"),
+    file: UploadFile = File(..., description="Document: PDF/Picture/Office/HTML/Audio/Video ect."),
     backend: str = Form(
-        "pipeline", description="处理后端: pipeline/deepseek-ocr/paddleocr-vl (文档) | sensevoice (音频) | video (视频)"
+        "pipeline", description="Handling: pipeline/deepseek-ocr/paddleocr-vl (Document) | sensevoice (Audio) | video "
     ),
-    lang: str = Form("auto", description="语言: auto/ch/en/korean/japan等"),
-    method: str = Form("auto", description="解析方法: auto/txt/ocr"),
+    lang: str = Form("auto", description="Language: auto/ch/en/korean/japan等"),
+    method: str = Form("auto", description="example: auto/txt/ocr"),
     formula_enable: bool = Form(True, description="是否启用公式识别"),
     table_enable: bool = Form(True, description="是否启用表格识别"),
     priority: int = Form(0, description="优先级，数字越大越优先"),
@@ -396,6 +407,105 @@ async def get_queue_stats():
 
     return {"success": True, "stats": stats, "total": sum(stats.values()), "timestamp": datetime.now().isoformat()}
 
+# -----------------------------
+# RAG REST 接口（将 Gradio 替换为 FastAPI 路由）
+# -----------------------------
+@app.get("/api/kbs")
+async def list_kbs():
+    """列出所有知识库"""
+    try:
+        kbs = rag.get_knowledge_bases()
+        return {"success": True, "kbs": kbs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/kb")
+async def create_kb(kb_name: str = Form(...)):
+    """创建知识库"""
+    try:
+        res = rag.create_knowledge_base(kb_name)
+        return {"success": True, "message": res}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/kb/{kb_name}")
+async def delete_kb(kb_name: str):
+    """删除知识库"""
+    try:
+        res = rag.delete_knowledge_base(kb_name)
+        return {"success": True, "message": res}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/kb/{kb_name}/files")
+async def list_kb_files(kb_name: str):
+    """列出指定知识库中的文件和索引状态"""
+    try:
+        files = rag.get_kb_files(kb_name)
+        kb_dir = os.path.join(rag.KB_BASE_DIR, kb_name)
+        has_index = os.path.exists(os.path.join(kb_dir, "semantic_chunk.index"))
+        return {"success": True, "files": files, "has_index": has_index}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/kb/{kb_name}/upload")
+async def upload_files_to_kb(kb_name: str, files: List[UploadFile] = File(...)):
+    """
+    上传多个文件到指定知识库并进行处理（支持 .txt 和 .pdf）
+    文件会被暂存为临时文件，传给 RAG 模块处理，处理完成后临时文件会被清理。
+    """
+    tmp_paths = []
+    try:
+        if not files:
+            raise HTTPException(status_code=400, detail="没有上传任何文件")
+        # 保存每个上传文件到临时路径
+        for up in files:
+            # 保持原始后缀
+            _, ext = os.path.splitext(up.filename or "")
+            if not ext:
+                ext = ".bin"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmpf:
+                content = await up.read()
+                tmpf.write(content)
+                tmp_paths.append(tmpf.name)
+        # 调用 rag 模块进行处理（支持文件路径列表）
+        result = rag.process_and_index_files(tmp_paths, kb_name)
+        return {"success": True, "message": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # 清理临时文件
+        for p in tmp_paths:
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+
+@app.post("/api/rag/ask")
+async def rag_ask(
+    question: str = Form(...),
+    kb_name: str = Form(rag.DEFAULT_KB),
+    use_search: bool = Form(True),
+    use_table_format: bool = Form(False),
+    multi_hop: bool = Form(False),
+):
+    """
+    使用 RAG 模块回答问题（同步接口）
+    - question: 待问问题
+    - kb_name: 使用的知识库
+    - use_search: 是否启用联网搜索
+    - use_table_format: 是否要求表格格式输出
+    - multi_hop: 是否启用多跳推理（当前 ask_question_parallel 会根据参数选择）
+    """
+    try:
+        # 使用 rag.ask_question_parallel（内部会根据 multi_hop/use_search 决定策略）
+        answer = rag.ask_question_parallel(question, kb_name=kb_name, use_search=use_search, use_table_format=use_table_format, multi_hop=multi_hop)
+        return {"success": True, "answer": answer}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/v1/queue/tasks")
 async def list_tasks(
@@ -475,7 +585,7 @@ if __name__ == "__main__":
     # 从环境变量读取端口，默认为8000
     api_port = int(os.getenv("API_PORT", "8000"))
 
-    logger.info("🚀 Starting MinerU Tianshu API Server...")
+    logger.info("🚀 Starting Flex AI API Server...")
     logger.info(f"📖 API Documentation: http://localhost:{api_port}/docs")
 
-    uvicorn.run(app, host="0.0.0.0", port=api_port, log_level="info")
+    uvicorn.run(app, host="127.0.0.1", port=api_port, log_level="info")
