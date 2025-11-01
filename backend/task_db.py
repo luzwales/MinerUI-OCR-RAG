@@ -77,7 +77,11 @@ class TaskDB:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_worker_id ON tasks(worker_id)")
 
     def create_task(
-        self, file_name: str, file_path: str, backend: str = "pipeline", options: dict = None, priority: int = 0
+        self, file_name: str, 
+        file_path: str, 
+        backend: str = "pipeline", 
+        options: dict = None, 
+        priority: int = 0
     ) -> str:
         """
         创建新任务

@@ -5,7 +5,7 @@ class Config():
     topt = 6    #召回文本片段的数量
     maxlen = 128  #召回文本片段的长度
     topk = 5    #query召回的关键词数量
-    bert_path = '/workspace/model/embedding/tao-8k' #本地bert模型路径
+    bert_path = '/workspace/models/embedding/tao-8k' #本地bert模型路径
     recall_way = 'embed'  #召回方式 ,keyword,embed
 
     #generator参数

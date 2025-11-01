@@ -16,6 +16,7 @@ import threading
 import signal
 import atexit
 from pathlib import Path
+from config import Config
 
 # Fix litserve MCP compatibility with mcp>=1.1.0
 # litserve 0.2.16 uses mcp.server.lowlevel API which still exists in mcp 1.18.0
@@ -48,6 +49,7 @@ except Exception:
     pass
 
 from loguru import logger
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'rag')))
 
 # 添加父目录到路径以导入 MinerU
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -146,8 +148,8 @@ class MinerUWorkerAPI(ls.LitAPI):
 
     def __init__(
         self,
-        output_dir="/tmp/mineru_tianshu_output",
-        worker_id_prefix="tianshu",
+        output_dir=Config.ocr_output_dir,
+        worker_id_prefix="FlexAI",
         poll_interval=0.5,
         enable_worker_loop=True,
     ):
@@ -163,7 +165,9 @@ class MinerUWorkerAPI(ls.LitAPI):
         self.audio_engine = None
         self.video_engine = None
         self.running = False  # Worker 运行状态
-        self.worker_thread = None  # Worker 线程
+        self.worker_thread = None  # Worker 线程，
+        self.isRAG:bool = False 
+        self.ragName:str = "default"
 
     def setup(self, device):
         """
@@ -444,6 +448,24 @@ class MinerUWorkerAPI(ls.LitAPI):
                 self._parse_with_markitdown(file_path=Path(file_path), file_name=file_name, output_path=output_path)
                 parse_method = "MarkItDown"
 
+            if options.get("isRAG", False):
+                try:
+                    # Find the generated markdown file
+                    md_files = list(output_path.rglob("*.md"))
+                    if md_files:
+                        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'rag')))
+                        # Import rag module (at top of file)
+                        from RAG import rag
+
+                        # Upload to specified RAG knowledge base
+                        rag_name = options.get("rag_name", "default")
+                        result = rag.batch_upload_to_kb([str(md_files[0])], rag_name)
+                        logger.info(f"📄 RAG upload result: {result}")
+                    else:
+                        logger.warning("⚠️  No markdown file found for RAG upload")
+                except Exception as rag_error:
+                    logger.error(f"❌ RAG upload failed: {rag_error}")
+
             # 更新状态为成功
             success = self.db.update_task_status(
                 task_id, "completed", result_path=str(output_path), worker_id=self.worker_id
@@ -453,11 +475,14 @@ class MinerUWorkerAPI(ls.LitAPI):
                 logger.info(f"✅ Task {task_id} completed by {self.worker_id}")
                 logger.info(f"   Parser: {parse_method}")
                 logger.info(f"   Output: {output_path}")
+            
+
             else:
                 logger.warning(
                     f"⚠️  Task {task_id} was modified by another process. "
                     f"Worker {self.worker_id} completed the work but status update was rejected."
                 )
+            
 
         finally:
             # 清理临时文件
@@ -944,7 +969,7 @@ class MinerUWorkerAPI(ls.LitAPI):
 
 
 def start_litserve_workers(
-    output_dir="/tmp/mineru_tianshu_output",
+    output_dir=Config.ocr_output_dir,
     accelerator="auto",
     devices="auto",
     workers_per_device=1,
@@ -978,7 +1003,7 @@ def start_litserve_workers(
     logger.info("=" * 60)
 
     # 创建 LitServe 服务器
-    api = MinerUWorkerAPI(output_dir=output_dir, poll_interval=poll_interval, enable_worker_loop=enable_worker_loop)
+    api: MinerUWorkerAPI = MinerUWorkerAPI(output_dir=output_dir, poll_interval=poll_interval, enable_worker_loop=enable_worker_loop)
     server = ls.LitServer(
         api,
         accelerator=accelerator,
@@ -1022,7 +1047,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="MinerU Tianshu LitServe Worker Pool")
     parser.add_argument(
-        "--output-dir", type=str, default="/tmp/mineru_tianshu_output", help="Output directory for processed files"
+        "--output-dir", type=str, default=Config.ocr_output_dir, help="Output directory for processed files"
     )
     parser.add_argument(
         "--accelerator", type=str, default="auto", choices=["auto", "cuda", "cpu", "mps"], help="Accelerator type"

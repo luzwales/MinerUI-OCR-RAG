@@ -239,8 +239,8 @@ export API_PORT=8000
 
 # MCP Server 配置 (可选)
 export MCP_PORT=8001
-export MCP_HOST=0.0.0.0
-export API_BASE_URL=http://localhost:8000
+export MCP_HOST=127.0.0.1
+export API_BASE_URL=http://127.0.0.1:8000
 
 # MinIO 配置 (可选)
 export MINIO_ENDPOINT="your-endpoint.com"

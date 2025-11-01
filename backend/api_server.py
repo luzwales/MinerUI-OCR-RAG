@@ -59,11 +59,11 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # MinIO 配置
 MINIO_CONFIG = {
-    "endpoint": os.getenv("MINIO_ENDPOINT", ""),
-    "access_key": os.getenv("MINIO_ACCESS_KEY", ""),
-    "secret_key": os.getenv("MINIO_SECRET_KEY", ""),
+    "endpoint": os.getenv("http://127.0.0.1:9001/", ""),
+    "access_key": os.getenv("password", ""),
+    "secret_key": os.getenv("password", ""),
     "secure": True,
-    "bucket_name": os.getenv("MINIO_BUCKET", ""),
+    "bucket_name": os.getenv("flex", ""),
 }
 
 
@@ -174,6 +174,8 @@ async def submit_task(
     remove_watermark: bool = Form(False, description="是否启用水印去除（支持 PDF/图片）"),
     watermark_conf_threshold: float = Form(0.35, description="水印检测置信度阈值（0.0-1.0，推荐 0.35）"),
     watermark_dilation: int = Form(10, description="水印掩码膨胀大小（像素，推荐 10）"),
+    isRAG:bool= Form(False,description="是否导入RAG"),
+    rag_name:str = Form("default",description="RAG名称")
 ):
     """
     提交文档解析任务
@@ -215,6 +217,8 @@ async def submit_task(
                 "remove_watermark": remove_watermark,
                 "watermark_conf_threshold": watermark_conf_threshold,
                 "watermark_dilation": watermark_dilation,
+                "isRAG":isRAG,
+                "rag_name":rag_name
             },
             priority=priority,
         )
@@ -447,6 +451,7 @@ async def list_kb_files(kb_name: str):
         return {"success": True, "files": files, "has_index": has_index}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/kb/{kb_name}/upload")
 async def upload_files_to_kb(kb_name: str, files: List[UploadFile] = File(...)):

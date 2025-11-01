@@ -13,6 +13,7 @@ import time
 import os
 from loguru import logger
 from pathlib import Path
+from config import Config
 import argparse
 
 
@@ -21,7 +22,7 @@ class TianshuLauncher:
 
     def __init__(
         self,
-        output_dir="/tmp/mineru_tianshu_output",
+        output_dir=Config.ocr_output_dir,
         api_port=8000,
         worker_port=9000,
         workers_per_device=1,
@@ -341,7 +342,7 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="/tmp/mineru_tianshu_output",
+        default=Config.ocr_output_dir,
         help="输出目录 (默认: /tmp/mineru_tianshu_output)",
     )
     parser.add_argument("--api-port", type=int, default=8000, help="API服务器端口 (默认: 8000)")
