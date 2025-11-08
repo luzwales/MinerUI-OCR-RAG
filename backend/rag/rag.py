@@ -9,7 +9,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import shutil
 from openai import OpenAI
-import gradio as gr
 import os
 import fitz  # PyMuPDF
 import chardet  # 用于自动检测编码
@@ -18,6 +17,7 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from config import Config  # 导入配置文件
+from task_db import TaskDB
 
 # 创建知识库根目录和临时文件目录
 KB_BASE_DIR = Config.kb_base_dir
@@ -31,6 +31,9 @@ os.makedirs(DEFAULT_KB_DIR, exist_ok=True)
 # 创建临时输出目录
 OUTPUT_DIR = Config.output_dir
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# 初始化数据库连接
+db = TaskDB()
 
 client = OpenAI(
     api_key=Config.llm_api_key,
@@ -50,27 +53,73 @@ class DeepSeekClient:
         return response.choices[0].message.content.strip()
 
 # 获取知识库列表
-def get_knowledge_bases() -> List[str]:
-    """获取所有知识库名称"""
+# 获取知识库列表
+def get_knowledge_bases() -> List[Dict]:
+    """获取所有知识库的完整信息列表"""
     try:
+        # 确保知识库根目录存在
         if not os.path.exists(KB_BASE_DIR):
             os.makedirs(KB_BASE_DIR, exist_ok=True)
             
+        # 从数据库获取知识库完整记录
+        kb_records = db.get_knowledge_bases()
+        
+        # 获取文件系统中的知识库目录
         kb_dirs = [d for d in os.listdir(KB_BASE_DIR) 
                   if os.path.isdir(os.path.join(KB_BASE_DIR, d))]
         
-        # 确保默认知识库存在
-        if DEFAULT_KB not in kb_dirs:
-            os.makedirs(os.path.join(KB_BASE_DIR, DEFAULT_KB), exist_ok=True)
-            kb_dirs.append(DEFAULT_KB)
-            
-        return sorted(kb_dirs)
+        # 确保默认知识库存在于文件系统和数据库中
+        if DEFAULT_KB not in [record['kb_name'] for record in kb_records]:
+            # 如果默认知识库目录存在但数据库中没有记录，创建数据库记录
+            if DEFAULT_KB in kb_dirs:
+                db.create_knowledge_base(DEFAULT_KB)
+                # 重新获取完整记录
+                kb_records = db.get_knowledge_bases()
+            else:
+                # 如果默认知识库目录也不存在，创建目录和数据库记录
+                os.makedirs(DEFAULT_KB_DIR, exist_ok=True)
+                db.create_knowledge_base(DEFAULT_KB)
+                # 重新获取完整记录
+                kb_records = db.get_knowledge_bases()
+        
+        # 确保文件系统和数据库同步（可选，根据实际需求）
+        for kb_dir in kb_dirs:
+            if kb_dir not in [record['kb_name'] for record in kb_records]:
+                # 如果文件系统有但数据库没有，创建数据库记录
+                db.create_knowledge_base(kb_dir)
+                # 重新获取完整记录
+                kb_records = db.get_knowledge_bases()
+        
+        # 按创建时间排序返回完整记录
+        return sorted(kb_records, key=lambda x: x['created_at'])
     except Exception as e:
         print(f"获取知识库列表失败: {str(e)}")
-        return [DEFAULT_KB]
+        # 出错时返回包含默认知识库的最小记录
+        return [{"id": 1, "kb_name": DEFAULT_KB, "system_prompt": "", 
+                "created_at": "", "updated_at": "", "created_by": "system", "updated_by": "system"}]
+
+# 更新知识库
+def update_knowledge_base(kb_name: str, system_prompt: str = '', updated_by: str = 'system') -> str:
+    """更新知识库的system_prompt和update_by字段"""
+    try:
+        # 检查知识库是否存在
+        kb_record = db.get_knowledge_base_by_name(kb_name)
+        if not kb_record:
+            return f"知识库 '{kb_name}' 不存在"
+            
+        # 更新知识库记录，更新update_by为当前时间
+        import datetime
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        if db.update_knowledge_base(kb_name, system_prompt, updated_by="system"):
+            return f"知识库 '{kb_name}' 已更新"
+        else:
+            return f"更新知识库 '{kb_name}' 失败"
+    except Exception as e:
+        return f"更新知识库失败: {str(e)}"
 
 # 创建新知识库
-def create_knowledge_base(kb_name: str) -> str:
+def create_knowledge_base(kb_name: str, system_prompt: str = '', created_by: str = 'system') -> str:
     """创建新的知识库"""
     try:
         if not kb_name or not kb_name.strip():
@@ -83,8 +132,17 @@ def create_knowledge_base(kb_name: str) -> str:
         if os.path.exists(kb_path):
             return f"知识库 '{kb_name}' 已存在"
             
+        # 先创建文件系统目录
         os.makedirs(kb_path, exist_ok=True)
-        return f"知识库 '{kb_name}' 创建成功"
+        
+        # 再创建数据库记录
+        if db.create_knowledge_base(kb_name, system_prompt, created_by):
+            return f"知识库 '{kb_name}' 创建成功"
+        else:
+            # 如果数据库记录创建失败，删除已创建的目录
+            if os.path.exists(kb_path):
+                shutil.rmtree(kb_path)
+            return f"创建知识库数据库记录失败"
     except Exception as e:
         return f"创建知识库失败: {str(e)}"
 
@@ -96,11 +154,19 @@ def delete_knowledge_base(kb_name: str) -> str:
             return f"无法删除默认知识库 '{DEFAULT_KB}'"
             
         kb_path = os.path.join(KB_BASE_DIR, kb_name)
-        if not os.path.exists(kb_path):
-            return f"知识库 '{kb_name}' 不存在"
-            
-        shutil.rmtree(kb_path)
-        return f"知识库 '{kb_name}' 已删除"
+        # 先从数据库删除记录
+        if db.delete_knowledge_base(kb_name):
+            # 如果数据库记录删除成功，再删除文件系统目录
+            if os.path.exists(kb_path):
+                shutil.rmtree(kb_path)
+            return f"知识库 '{kb_name}' 已删除"
+        else:
+            # 数据库记录不存在或删除失败
+            if os.path.exists(kb_path):
+                shutil.rmtree(kb_path)
+                return f"知识库记录不存在，文件目录刚刚删除"
+            else:
+                return f"知识库 '{kb_name}' 不存在"
     except Exception as e:
         return f"删除知识库失败: {str(e)}"
 
@@ -1241,92 +1307,104 @@ def ask_question_parallel(
     use_search: bool = True, 
     use_table_format: bool = False, 
     multi_hop: bool = False,
-    model=Config.llm_model) -> str:
+    model=Config.llm_model,
+    IsRagAnswer=True) -> str:   
     """基于指定知识库回答问题"""
-    try:
-        kb_paths = get_kb_paths(kb_name)
-        index_path = kb_paths["index_path"]
-        metadata_path = kb_paths["metadata_path"]
+    if not IsRagAnswer:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question}
+            ]
+        )
+        
+        return response.choices[0].message.content.strip()
+    else:        
+        try:
+            kb_paths = get_kb_paths(kb_name)
+            index_path = kb_paths["index_path"]
+            metadata_path = kb_paths["metadata_path"]
 
-        search_background = ""
-        local_answer = ""
-        debug_info = {}
+            search_background = ""
+            local_answer = ""
+            debug_info = {}
 
-        # 并行处理
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = {}
-            
-            if use_search:
-                futures[executor.submit(get_search_background, question)] = "search"
+            # 并行处理
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = {}
                 
-            if os.path.exists(index_path):
-                if multi_hop:
-                    # 使用多跳推理
-                    futures[executor.submit(multi_hop_generate_answer, question, kb_name, use_table_format)] = "rag"
-                else:
-                    # 使用简单向量检索
-                    futures[executor.submit(simple_generate_answer, question, kb_name, use_table_format)] = "simple"
-                
-            for future in as_completed(futures):
-                result = future.result()
-                if futures[future] == "search":
-                    search_background = result or ""
-                elif futures[future] == "rag":
-                    local_answer, debug_info = result
-                elif futures[future] == "simple":
-                    local_answer = result
+                if use_search:
+                    futures[executor.submit(get_search_background, question)] = "search"
+                    
+                if os.path.exists(index_path):
+                    if multi_hop:
+                        # 使用多跳推理
+                        futures[executor.submit(multi_hop_generate_answer, question, kb_name, use_table_format)] = "rag"
+                    else:
+                        # 使用简单向量检索
+                        futures[executor.submit(simple_generate_answer, question, kb_name, use_table_format)] = "simple"
+                    
+                for future in as_completed(futures):
+                    result = future.result()
+                    if futures[future] == "search":
+                        search_background = result or ""
+                    elif futures[future] == "rag":
+                        local_answer, debug_info = result
+                    elif futures[future] == "simple":
+                        local_answer = result
 
-        # 如果同时有搜索和本地结果，合并它们
-        if search_background and local_answer:            
-            table_instruction = ""
-            if use_table_format:
-                table_instruction = """
-                请尽可能以Markdown表格的形式呈现你的回答，特别是对于症状、治疗方法、药物等结构化信息。
+            # 如果同时有搜索和本地结果，合并它们
+            if search_background and local_answer:            
+                table_instruction = ""
+                if use_table_format:
+                    table_instruction = """
+                    请尽可能以Markdown表格的形式呈现你的回答，特别是对于症状、治疗方法、药物等结构化信息。
+                    
+                    请确保你的表格遵循正确的Markdown语法：
+                    | 列标题1 | 列标题2 | 列标题3 |
+                    | ------- | ------- | ------- |
+                    | 数据1   | 数据2   | 数据3   |
+                    """
+                    
+                user_prompt = f"""
+                问题：{question}
                 
-                请确保你的表格遵循正确的Markdown语法：
-                | 列标题1 | 列标题2 | 列标题3 |
-                | ------- | ------- | ------- |
-                | 数据1   | 数据2   | 数据3   |
+                网络搜索结果：{search_background}
+                
+                本地知识库分析：{local_answer}
+                
+                {table_instruction}
+                
+                请根据以上信息，提供一个综合的回答。
                 """
                 
-            user_prompt = f"""
-            问题：{question}
-            
-            网络搜索结果：{search_background}
-            
-            本地知识库分析：{local_answer}
-            
-            {table_instruction}
-            
-            请根据以上信息，提供一个综合的回答。
-            """
-            
-            try:
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ]
-                )
-                combined_answer = response.choices[0].message.content.strip()
-                return combined_answer
-            except Exception as e:
-                # 如果合并失败，回退到本地答案
+                try:
+                    response = client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ]
+                    )
+                    combined_answer = response.choices[0].message.content.strip()
+                    return combined_answer
+                except Exception as e:
+                    # 如果合并失败，回退到本地答案
+                    return local_answer
+            elif local_answer:
                 return local_answer
-        elif local_answer:
-            return local_answer
-        elif search_background:
-            # 仅从搜索结果生成答案
-            system_prompt = system_prompt
-            if use_table_format:
-                system_prompt += "请尽可能以Markdown表格的形式呈现结构化信息。"
-            return generate_answer_from_deepseek(question, system_prompt=system_prompt, background_info=f"[联网搜索结果]：{search_background}")
-        else:
-            return "未找到相关信息。"
-            
-    except Exception as e:
-        return f"查询失败：{str(e)}"
+            elif search_background:
+                # 仅从搜索结果生成答案
+                system_prompt = system_prompt
+                if use_table_format:
+                    system_prompt += "请尽可能以Markdown表格的形式呈现结构化信息。"
+                return generate_answer_from_deepseek(question, system_prompt=system_prompt, background_info=f"[联网搜索结果]：{search_background}")
+            else:
+                return "未找到相关信息。"
+                
+        except Exception as e:
+            return f"查询失败：{str(e)}"
 
 # 修改以支持多知识库的流式响应函数
 def process_question_with_reasoning(

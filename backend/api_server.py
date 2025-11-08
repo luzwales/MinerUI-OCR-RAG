@@ -412,7 +412,7 @@ async def get_queue_stats():
     return {"success": True, "stats": stats, "total": sum(stats.values()), "timestamp": datetime.now().isoformat()}
 
 # -----------------------------
-# RAG REST 接口（将 Gradio 替换为 FastAPI 路由）
+# RAG REST 接口（FastAPI 路由）
 # -----------------------------
 @app.get("/api/kbs")
 async def list_kbs():
@@ -424,10 +424,10 @@ async def list_kbs():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/kb")
-async def create_kb(kb_name: str = Form(...)):
+async def create_kb(kb_name: str = Form(...),system_prompt: str = Form(...)):
     """创建知识库"""
     try:
-        res = rag.create_knowledge_base(kb_name)
+        res = rag.create_knowledge_base(kb_name=kb_name, system_prompt=system_prompt)
         return {"success": True, "message": res}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -437,6 +437,15 @@ async def delete_kb(kb_name: str):
     """删除知识库"""
     try:
         res = rag.delete_knowledge_base(kb_name)
+        return {"success": True, "message": res}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.update("/api/kb/{kb_name}")
+async def update_kb(kb_name: str, system_prompt: str = Form(...),updated_by: str = Form(...)):
+    """更新知识库"""
+    try:
+        res = rag.update_knowledge_base(kb_name, system_prompt,updated_by)
         return {"success": True, "message": res}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -495,6 +504,9 @@ async def rag_ask(
     use_search: bool = Form(True),
     use_table_format: bool = Form(False),
     multi_hop: bool = Form(False),
+    system_prompt: str = Form("我是一名行业专家，请回答我的问题。"),
+    model=Config.llm_model,
+    isRagAnswer=Form(True),
 ):
     """
     使用 RAG 模块回答问题（同步接口）
@@ -502,11 +514,22 @@ async def rag_ask(
     - kb_name: 使用的知识库
     - use_search: 是否启用联网搜索
     - use_table_format: 是否要求表格格式输出
-    - multi_hop: 是否启用多跳推理（当前 ask_question_parallel 会根据参数选择）
+    - multi_hop: 是否启用多跳推理（当前 ask_question_parallel 会根据参数选择）,
+    - system_prompt: 系统提示
+    - model: 模型名称
+    - isRagAnswer: 是否使用 rag 模块回答
     """
     try:
         # 使用 rag.ask_question_parallel（内部会根据 multi_hop/use_search 决定策略）
-        answer = rag.ask_question_parallel(question, kb_name=kb_name, use_search=use_search, use_table_format=use_table_format, multi_hop=multi_hop)
+        answer = rag.ask_question_parallel(
+            question, 
+            kb_name=kb_name, 
+            system_prompt=system_prompt,
+            use_search=use_search, 
+            use_table_format=use_table_format, 
+            multi_hop=multi_hop,
+            model=model,
+            isRagAnswer=isRagAnswer)
         return {"success": True, "answer": answer}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -591,6 +614,6 @@ if __name__ == "__main__":
     api_port = int(os.getenv("API_PORT", "8000"))
 
     logger.info("🚀 Starting Flex AI API Server...")
-    logger.info(f"📖 API Documentation: http://localhost:{api_port}/docs")
+    logger.info(f"📖 API Documentation: http://127.0.0.1:{api_port}/docs")
 
     uvicorn.run(app, host="127.0.0.1", port=api_port, log_level="info")

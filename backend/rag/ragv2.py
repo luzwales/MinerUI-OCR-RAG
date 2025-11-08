@@ -11,9 +11,12 @@ from typing import Optional
 from openai import OpenAI
 import gradio as gr
 import os
+import sys
 import fitz  # PyMuPDF
 import chardet  # 用于自动检测编码
 import traceback
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from config import Config  # 导入配置文件
 
 # 创建知识库根目录和临时文件目录
@@ -620,7 +623,10 @@ def get_search_background(query: str, max_length: int = 1500) -> str:
         return ""
 
 # 基本的回答生成
-def generate_answer_from_deepseek(question: str, system_prompt: str = "你是一名专业医疗助手，请根据背景知识回答问题。", background_info: Optional[str] = None) -> str:
+def generate_answer_from_deepseek(
+    question: str, 
+    system_prompt: str = "你是一名专业医疗助手，请根据背景知识回答问题。", 
+    background_info: Optional[str] = None) -> str:
     deepseek_client = DeepSeekClient()
     user_prompt = f"问题：{question}"
     if background_info:
@@ -1082,7 +1088,9 @@ class ReasoningRAG:
                 "reasoning_steps": reasoning_steps
             }
     
-    def retrieve_and_answer(self, query: str, use_table_format: bool = False) -> Tuple[str, Dict[str, Any]]:
+    def retrieve_and_answer(self, 
+    query: str, 
+    use_table_format: bool = False) -> Tuple[str, Dict[str, Any]]:
         """
         执行多跳检索和回答生成的主要方法
         
@@ -1180,52 +1188,13 @@ def multi_hop_generate_answer(query: str, kb_name: str, use_table_format: bool =
     answer, debug_info = reasoning_rag.retrieve_and_answer(query, use_table_format)
     return answer, debug_info
 
-# 使用简单向量检索生成答案，基于指定知识库
-def simple_generate_answer(query: str, kb_name: str, use_table_format: bool = False) -> str:
-    """使用简单的向量检索生成答案，不使用多跳推理"""
-    try:
-        kb_paths = get_kb_paths(kb_name)
-        
-        # 使用基本向量搜索
-        search_results = vector_search(query, kb_paths["index_path"], kb_paths["metadata_path"], limit=5)
-        
-        if not search_results:
-            return "未找到相关信息。"
-        
-        # 准备背景信息
-        background_chunks = "\n\n".join([f"[相关信息 {i+1}]: {result['chunk']}" 
-                                       for i, result in enumerate(search_results)])
-        
-        # 生成答案
-        system_prompt = "你是一名行业专家。基于提供的背景信息回答用户的问题。"
-        
-        if use_table_format:
-            system_prompt += "请尽可能以Markdown表格的形式呈现结构化信息。"
-        
-        user_prompt = f"""
-        问题：{query}
-        
-        背景信息：
-        {background_chunks}
-        
-        请基于以上背景信息回答用户的问题。
-        """
-        
-        response = client.chat.completions.create(
-            model=Config.llm_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
-        )
-        
-        return response.choices[0].message.content.strip()
-        
-    except Exception as e:
-        return f"生成答案时出错：{str(e)}"
-
-# 修改主要的问题处理函数以支持指定知识库
-def ask_question_parallel(question: str, kb_name: str = DEFAULT_KB, use_search: bool = True, use_table_format: bool = False, multi_hop: bool = False) -> str:
+def ask_question_parallel(
+    question: str, 
+    kb_name: str = DEFAULT_KB, 
+    use_search: bool = True, 
+    use_table_format: bool = False, 
+    multi_hop: bool = False,
+    model=Config.llm_model) -> str:
     """基于指定知识库回答问题"""
     try:
         kb_paths = get_kb_paths(kb_name)
@@ -1315,7 +1284,15 @@ def ask_question_parallel(question: str, kb_name: str = DEFAULT_KB, use_search: 
         return f"查询失败：{str(e)}"
 
 # 修改以支持多知识库的流式响应函数
-def process_question_with_reasoning(question: str, kb_name: str = DEFAULT_KB, use_search: bool = True, use_table_format: bool = False, multi_hop: bool = False, chat_history: List = None):
+def process_question_with_reasoning(
+    question: str, 
+    kb_name: str = DEFAULT_KB, 
+    use_search: bool = True, 
+    use_table_format: bool = False, 
+    multi_hop: bool = False, 
+    chat_history: List = None,
+    system_prompt: str = "你作为一名行业专家，请根据提供的背景信息，回答用户的问题。",
+    model:str=Config.llm_model):
     """增强版process_question，支持流式响应，实时显示检索和推理过程，支持多知识库和对话历史"""
     try:
         kb_paths = get_kb_paths(kb_name)
@@ -1362,7 +1339,6 @@ def process_question_with_reasoning(question: str, kb_name: str = DEFAULT_KB, us
                 yield search_display, "等待联网搜索结果..."
                 
                 search_result = search_future.result() or "未找到相关网络信息"
-                system_prompt = "你是一名行业专家。请考虑对话历史并回答用户的问题。"
                 if use_table_format:
                     system_prompt += "请尽可能以Markdown表格的形式呈现结构化信息。"
                 answer = generate_answer_from_deepseek(enhanced_question, system_prompt=system_prompt, background_info=f"[联网搜索结果]：{search_result}")
@@ -1425,7 +1401,6 @@ def process_question_with_reasoning(question: str, kb_name: str = DEFAULT_KB, us
                     background_chunks = "\n\n".join([f"[相关信息 {i+1}]: {result['chunk']}" 
                                                    for i, result in enumerate(search_results)])
                     
-                    system_prompt = "你是一名行业专家。基于提供的背景信息和对话历史回答用户的问题。"
                     if use_table_format:
                         system_prompt += "请尽可能以Markdown表格的形式呈现结构化信息。"
                     
@@ -1439,7 +1414,7 @@ def process_question_with_reasoning(question: str, kb_name: str = DEFAULT_KB, us
                     """
                     
                     response = client.chat.completions.create(
-                        model=Config.llm_model,
+                        model=model,
                         messages=[
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt}
@@ -1466,8 +1441,6 @@ def process_question_with_reasoning(question: str, kb_name: str = DEFAULT_KB, us
                 else:
                     yield f"### 联网搜索结果\n{search_result}\n\n### 知识库: {kb_name}\n### 检索状态\n{status_text}", current_answer
                 
-                # 合并结果
-                system_prompt = "你是一名行业专家，请整合网络搜索和本地知识库提供全面的解答。请考虑对话历史。"
                 
                 if use_table_format:
                     system_prompt += "请尽可能以Markdown表格的形式呈现结构化信息。"
@@ -1539,6 +1512,52 @@ def batch_upload_to_kb(file_objs: List, kb_name: str) -> str:
         return process_and_index_files(file_objs, kb_name)
     except Exception as e:
         return f"上传文件到知识库失败: {str(e)}"
+
+
+# 使用简单向量检索生成答案，基于指定知识库
+def simple_generate_answer(query: str, 
+    system_prompt="你是一名行业专家。基于提供的背景信息回答用户的问题。",
+    kb_name: str = DEFAULT_KB, 
+    use_table_format: bool = False,
+    model:str=Config.llm_model) -> str:
+    try:
+        kb_paths = get_kb_paths(kb_name)
+        
+        # 使用基本向量搜索
+        search_results = vector_search(query, kb_paths["index_path"], kb_paths["metadata_path"], limit=5)
+        
+        if not search_results:
+            return "未找到相关信息。"
+        
+        # 准备背景信息
+        background_chunks = "\n\n".join([f"[相关信息 {i+1}]: {result['chunk']}" 
+                                       for i, result in enumerate(search_results)])
+        
+        if use_table_format:
+            system_prompt += "请尽可能以Markdown表格的形式呈现结构化信息。"
+        
+        user_prompt = f"""
+        问题：{query}
+        
+        背景信息：
+        {background_chunks}
+        
+        请基于以上背景信息回答用户的问题。
+        """
+        
+        response = client.chat.completions.create(
+            model= model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+        )
+        
+        return response.choices[0].message.content.strip()
+        
+    except Exception as e:
+        return f"生成答案时出错：{str(e)}"
+
 
 # Gradio 界面 - 修改为支持多知识库
 custom_css = """
@@ -1643,417 +1662,330 @@ custom_css = """
 }
 """
 
-custom_theme = gr.themes.Soft(
-    primary_hue="blue",
-    secondary_hue="blue",
-    neutral_hue="gray",
-    text_size="lg",
-    spacing_size="md",
-    radius_size="md"
-)
+# custom_theme = gr.themes.Soft(
+#     primary_hue="blue",
+#     secondary_hue="blue",
+#     neutral_hue="gray",
+#     text_size="lg",
+#     spacing_size="md",
+#     radius_size="md"
+# )
 
 # 添加简单的JavaScript，通过html组件实现
-js_code = """
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // 当页面加载完毕后，找到提交按钮，并为其添加点击事件
-    const observer = new MutationObserver(function(mutations) {
-        // 找到提交按钮
-        const submitButton = document.querySelector('button[data-testid="submit"]');
-        if (submitButton) {
-            submitButton.addEventListener('click', function() {
-                // 找到检索标签页按钮并点击它
-                setTimeout(function() {
-                    const retrievalTab = document.querySelector('[data-testid="tab-button-retrieval-tab"]');
-                    if (retrievalTab) retrievalTab.click();
-                }, 100);
-            });
-            observer.disconnect(); // 一旦找到并设置事件，停止观察
-        }
-    });
+# js_code = """
+# <script>
+# document.addEventListener('DOMContentLoaded', function() {
+#     // 当页面加载完毕后，找到提交按钮，并为其添加点击事件
+#     const observer = new MutationObserver(function(mutations) {
+#         // 找到提交按钮
+#         const submitButton = document.querySelector('button[data-testid="submit"]');
+#         if (submitButton) {
+#             submitButton.addEventListener('click', function() {
+#                 // 找到检索标签页按钮并点击它
+#                 setTimeout(function() {
+#                     const retrievalTab = document.querySelector('[data-testid="tab-button-retrieval-tab"]');
+#                     if (retrievalTab) retrievalTab.click();
+#                 }, 100);
+#             });
+#             observer.disconnect(); // 一旦找到并设置事件，停止观察
+#         }
+#     });
     
-    // 开始观察文档变化
-    observer.observe(document.body, { childList: true, subtree: true });
-});
-</script>
-"""
+#     // 开始观察文档变化
+#     observer.observe(document.body, { childList: true, subtree: true });
+# });
+# </script>
+# """
 
-with gr.Blocks(title="行业知识问答系统", theme=custom_theme, css=custom_css, elem_id="app-container") as demo:
-    with gr.Column(elem_id="header-container"):
-        gr.Markdown("""
-        # 🏥 行业知识问答系统
-        **智能行业问答助手，支持多知识库管理、多轮对话、普通语义检索和高级多跳推理**  
-        本系统支持创建多个知识库，上传TXT或PDF文件，通过语义向量检索或创新的多跳推理机制提供信息查询服务。
-        """)
+# with gr.Blocks(title="行业知识问答系统", theme=custom_theme, css=custom_css, elem_id="app-container") as demo:
+#     with gr.Column(elem_id="header-container"):
+#         gr.Markdown("""
+#         # 🏥 行业知识问答系统
+#         **智能行业问答助手，支持多知识库管理、多轮对话、普通语义检索和高级多跳推理**  
+#         本系统支持创建多个知识库，上传TXT或PDF文件，通过语义向量检索或创新的多跳推理机制提供信息查询服务。
+#         """)
     
-    # 添加JavaScript脚本
-    gr.HTML(js_code, visible=False)
+#     # 添加JavaScript脚本
+#     gr.HTML(js_code, visible=False)
     
-    # 使用State来存储对话历史
-    chat_history_state = gr.State([])
+#     # 使用State来存储对话历史
+#     chat_history_state = gr.State([])
     
     # 创建标签页
-    with gr.Tabs() as tabs:
-        # 知识库管理标签页
-        with gr.TabItem("知识库管理"):
-            with gr.Row():
-                # 左侧列：控制区
-                with gr.Column(scale=1, min_width=400):
-                    gr.Markdown("### 📚 知识库管理与构建")
+    # with gr.Tabs() as tabs:
+    #     # 知识库管理标签页
+    #     with gr.TabItem("知识库管理"):
+    #         with gr.Row():
+    #             # 左侧列：控制区
+    #             with gr.Column(scale=1, min_width=400):
+    #                 gr.Markdown("### 📚 知识库管理与构建")
                     
-                    with gr.Row(elem_id="kb-controls"):
-                        with gr.Column(scale=1):
-                            new_kb_name = gr.Textbox(
-                                label="新知识库名称",
-                                placeholder="输入新知识库名称",
-                                lines=1
-                            )
-                            create_kb_btn = gr.Button("创建知识库", variant="primary", scale=1)
+    #                 with gr.Row(elem_id="kb-controls"):
+    #                     with gr.Column(scale=1):
+    #                         new_kb_name = gr.Textbox(
+    #                             label="新知识库名称",
+    #                             placeholder="输入新知识库名称",
+    #                             lines=1
+    #                         )
+    #                         create_kb_btn = gr.Button("创建知识库", variant="primary", scale=1)
                     
-                        with gr.Column(scale=1):
-                            current_kbs = get_knowledge_bases()
-                            kb_dropdown = gr.Dropdown(
-                                label="选择知识库",
-                                choices=current_kbs,
-                                value=DEFAULT_KB if DEFAULT_KB in current_kbs else (current_kbs[0] if current_kbs else None),
-                                elem_classes="kb-selector"
-                            )
+    #                     with gr.Column(scale=1):
+    #                         current_kbs = get_knowledge_bases()
+    #                         kb_dropdown = gr.Dropdown(
+    #                             label="选择知识库",
+    #                             choices=current_kbs,
+    #                             value=DEFAULT_KB if DEFAULT_KB in current_kbs else (current_kbs[0] if current_kbs else None),
+    #                             elem_classes="kb-selector"
+    #                         )
                             
-                            with gr.Row():
-                                refresh_kb_btn = gr.Button("刷新列表", size="sm", scale=1)
-                                delete_kb_btn = gr.Button("删除知识库", size="sm", variant="stop", scale=1)
+    #                         with gr.Row():
+    #                             refresh_kb_btn = gr.Button("刷新列表", size="sm", scale=1)
+    #                             delete_kb_btn = gr.Button("删除知识库", size="sm", variant="stop", scale=1)
                     
-                    kb_status = gr.Textbox(label="知识库状态", interactive=False, placeholder="选择或创建知识库")
+    #                 kb_status = gr.Textbox(label="知识库状态", interactive=False, placeholder="选择或创建知识库")
                     
-                    with gr.Group(elem_id="kb-file-upload", elem_classes="compact-upload"):
-                        gr.Markdown("### 📄 上传文件到知识库")
-                        file_upload = gr.File(
-                            label="选择文件（支持多选TXT/PDF）",
-                            type="filepath",
-                            file_types=[".txt", ".pdf"],
-                            file_count="multiple",
-                            elem_classes="file-upload compact"
-                        )
-                        upload_status = gr.Textbox(label="上传状态", interactive=False, placeholder="上传后显示状态")
+    #                 with gr.Group(elem_id="kb-file-upload", elem_classes="compact-upload"):
+    #                     gr.Markdown("### 📄 上传文件到知识库")
+    #                     file_upload = gr.File(
+    #                         label="选择文件（支持多选TXT/PDF）",
+    #                         type="filepath",
+    #                         file_types=[".txt", ".pdf"],
+    #                         file_count="multiple",
+    #                         elem_classes="file-upload compact"
+    #                     )
+    #                     upload_status = gr.Textbox(label="上传状态", interactive=False, placeholder="上传后显示状态")
                     
-                    kb_select_for_chat = gr.Dropdown(
-                        label="为对话选择知识库",
-                        choices=current_kbs,
-                        value=DEFAULT_KB if DEFAULT_KB in current_kbs else (current_kbs[0] if current_kbs else None),
-                        visible=False  # 隐藏，仅用于同步
-                    )
+    #                 kb_select_for_chat = gr.Dropdown(
+    #                     label="为对话选择知识库",
+    #                     choices=current_kbs,
+    #                     value=DEFAULT_KB if DEFAULT_KB in current_kbs else (current_kbs[0] if current_kbs else None),
+    #                     visible=False  # 隐藏，仅用于同步
+    #                 )
                         
-                with gr.Column(scale=1, min_width=400):
-                    with gr.Group(elem_id="kb-files-group"):
-                        gr.Markdown("### 📋 知识库内容")
-                        kb_files_list = gr.Markdown(
-                            value="选择知识库查看文件...",
-                            elem_classes="kb-files-list"
-                        )
+    #             with gr.Column(scale=1, min_width=400):
+    #                 with gr.Group(elem_id="kb-files-group"):
+    #                     gr.Markdown("### 📋 知识库内容")
+    #                     kb_files_list = gr.Markdown(
+    #                         value="选择知识库查看文件...",
+    #                         elem_classes="kb-files-list"
+    #                     )
                 
-                # 用于对话界面的知识库选择器
-                kb_select_for_chat = gr.Dropdown(
-                    label="为对话选择知识库",
-                    choices=current_kbs,
-                    value=DEFAULT_KB if DEFAULT_KB in current_kbs else (current_kbs[0] if current_kbs else None),
-                    visible=False  # 隐藏，仅用于同步
-                )
+    #             # 用于对话界面的知识库选择器
+    #             kb_select_for_chat = gr.Dropdown(
+    #                 label="为对话选择知识库",
+    #                 choices=current_kbs,
+    #                 value=DEFAULT_KB if DEFAULT_KB in current_kbs else (current_kbs[0] if current_kbs else None),
+    #                 visible=False  # 隐藏，仅用于同步
+    #             )
         
-        # 对话交互标签页
-        with gr.TabItem("对话交互"):
-            with gr.Row():
-                with gr.Column(scale=1):
-                    gr.Markdown("### ⚙️ 对话设置")
+    #     # 对话交互标签页
+    #     with gr.TabItem("对话交互"):
+    #         with gr.Row():
+    #             with gr.Column(scale=1):
+    #                 gr.Markdown("### ⚙️ 对话设置")
                     
-                    kb_dropdown_chat = gr.Dropdown(
-                        label="选择知识库进行对话",
-                        choices=current_kbs,
-                        value=DEFAULT_KB if DEFAULT_KB in current_kbs else (current_kbs[0] if current_kbs else None),
-                    )
+    #                 kb_dropdown_chat = gr.Dropdown(
+    #                     label="选择知识库进行对话",
+    #                     choices=current_kbs,
+    #                     value=DEFAULT_KB if DEFAULT_KB in current_kbs else (current_kbs[0] if current_kbs else None),
+    #                 )
                     
-                    with gr.Row():
-                        web_search_toggle = gr.Checkbox(
-                            label="🌐 启用联网搜索",
-                            value=True,
-                            info="获取最新行业动态",
-                            elem_classes="web-search-toggle"
-                        )
-                        table_format_toggle = gr.Checkbox(
-                            label="📊 表格格式输出",
-                            value=True,
-                            info="使用Markdown表格展示结构化回答",
-                            elem_classes="web-search-toggle"
-                        )
+    #                 with gr.Row():
+    #                     web_search_toggle = gr.Checkbox(
+    #                         label="🌐 启用联网搜索",
+    #                         value=True,
+    #                         info="获取最新行业动态",
+    #                         elem_classes="web-search-toggle"
+    #                     )
+    #                     table_format_toggle = gr.Checkbox(
+    #                         label="📊 表格格式输出",
+    #                         value=True,
+    #                         info="使用Markdown表格展示结构化回答",
+    #                         elem_classes="web-search-toggle"
+    #                     )
                     
-                    multi_hop_toggle = gr.Checkbox(
-                        label="🔄 启用多跳推理",
-                        value=False,
-                        info="使用高级多跳推理机制（较慢但更全面）",
-                        elem_classes="multi-hop-toggle"
-                    )
+    #                 multi_hop_toggle = gr.Checkbox(
+    #                     label="🔄 启用多跳推理",
+    #                     value=False,
+    #                     info="使用高级多跳推理机制（较慢但更全面）",
+    #                     elem_classes="multi-hop-toggle"
+    #                 )
                     
-                    with gr.Accordion("显示检索进展", open=False):
-                        search_results_output = gr.Markdown(
-                            label="检索过程",
-                            elem_id="search-results",
-                            value="等待提交问题..."
-                        )
+    #                 with gr.Accordion("显示检索进展", open=False):
+    #                     search_results_output = gr.Markdown(
+    #                         label="检索过程",
+    #                         elem_id="search-results",
+    #                         value="等待提交问题..."
+    #                     )
                     
-                with gr.Column(scale=3):
-                    gr.Markdown("### 💬 对话历史")
-                    chatbot = gr.Chatbot(
-                        elem_id="chatbot",
-                        label="对话历史",
-                        height=550
-                    )
+    #             with gr.Column(scale=3):
+    #                 gr.Markdown("### 💬 对话历史")
+    #                 chatbot = gr.Chatbot(
+    #                     elem_id="chatbot",
+    #                     label="对话历史",
+    #                     height=550
+    #                 )
             
-            with gr.Row():
-                question_input = gr.Textbox(
-                    label="输入行业相关问题",
-                    placeholder="电子开料锯的维保周期是多久？",
-                    lines=2,
-                    elem_id="question-input"
-                )
+    #         with gr.Row():
+    #             question_input = gr.Textbox(
+    #                 label="输入行业相关问题",
+    #                 placeholder="电子开料锯的维保周期是多久？",
+    #                 lines=2,
+    #                 elem_id="question-input"
+    #             )
             
-            with gr.Row(elem_classes="submit-row"):
-                submit_btn = gr.Button("提交问题", variant="primary", elem_classes="submit-btn")
-                clear_btn = gr.Button("清空输入", variant="secondary")
-                clear_history_btn = gr.Button("清空对话历史", variant="secondary", elem_classes="clear-history-btn")
+    #         with gr.Row(elem_classes="submit-row"):
+    #             submit_btn = gr.Button("提交问题", variant="primary", elem_classes="submit-btn")
+    #             clear_btn = gr.Button("清空输入", variant="secondary")
+    #             clear_history_btn = gr.Button("清空对话历史", variant="secondary", elem_classes="clear-history-btn")
             
-            # 状态显示框
-            status_box = gr.HTML(
-                value='<div class="status-box status-processing">准备就绪，等待您的问题</div>',
-                visible=True
-            )
+    #         # 状态显示框
+    #         status_box = gr.HTML(
+    #             value='<div class="status-box status-processing">准备就绪，等待您的问题</div>',
+    #             visible=True
+    #         )
             
-            gr.Examples(
-                examples=[
-                    ["电子制造行业推进智能制造转型，有哪些核心举措？"],
-                    ["电子制造如何平衡研发环节的成本与创新？"],
-                    ["逆全球化下，制造业怎样优化供应链、增强韧性？"],
-                    ["立式五轴加工中心的各轴行程有多少？"],
-                    ["元件和器件的区别是什么"]
-                ],
-                inputs=question_input,
-                label="示例问题（点击尝试）"
-            )
+    #         gr.Examples(
+    #             examples=[
+    #                 ["电子制造行业推进智能制造转型，有哪些核心举措？"],
+    #                 ["电子制造如何平衡研发环节的成本与创新？"],
+    #                 ["逆全球化下，制造业怎样优化供应链、增强韧性？"],
+    #                 ["立式五轴加工中心的各轴行程有多少？"],
+    #                 ["元件和器件的区别是什么"]
+    #             ],
+    #             inputs=question_input,
+    #             label="示例问题（点击尝试）"
+    #         )
     
     # 创建知识库函数
-    def create_kb_and_refresh(kb_name):
-        result = create_knowledge_base(kb_name)
-        kbs = get_knowledge_bases()
-        # 更新两个下拉菜单
-        return result, gr.update(choices=kbs, value=kb_name if "创建成功" in result else None), gr.update(choices=kbs, value=kb_name if "创建成功" in result else None)
+def create_kb_and_refresh(kb_name):
+    result = create_knowledge_base(kb_name)
+    kbs = get_knowledge_bases()
+    # 更新两个下拉菜单
+    return result, gr.update(choices=kbs, value=kb_name if "创建成功" in result else None), gr.update(choices=kbs, value=kb_name if "创建成功" in result else None)
     
-    # 刷新知识库列表
-    def refresh_kb_list():
-        kbs = get_knowledge_bases()
-        # 更新两个下拉菜单
-        return gr.update(choices=kbs, value=kbs[0] if kbs else None), gr.update(choices=kbs, value=kbs[0] if kbs else None)
-    
-    # 删除知识库
-    def delete_kb_and_refresh(kb_name):
-        result = delete_knowledge_base(kb_name)
-        kbs = get_knowledge_bases()
-        # 更新两个下拉菜单
-        return result, gr.update(choices=kbs, value=kbs[0] if kbs else None), gr.update(choices=kbs, value=kbs[0] if kbs else None)
-    
-    # 更新知识库文件列表
-    def update_kb_files_list(kb_name):
-        if not kb_name:
-            return "未选择知识库"
-        
-        files = get_kb_files(kb_name)
-        kb_dir = os.path.join(KB_BASE_DIR, kb_name)
-        has_index = os.path.exists(os.path.join(kb_dir, "semantic_chunk.index"))
-        
-        if not files:
-            files_str = "知识库中暂无文件"
-        else:
-            files_str = "**文件列表:**\n\n" + "\n".join([f"- {file}" for file in files])
-        
-        index_status = "\n\n**索引状态:** " + ("✅ 已建立索引" if has_index else "❌ 未建立索引")
-        
-        return f"### 知识库: {kb_name}\n\n{files_str}{index_status}"
-    
-    # 同步知识库选择 - 管理界面到对话界面
-    def sync_kb_to_chat(kb_name):
-        return gr.update(value=kb_name)
-    
-    # 同步知识库选择 - 对话界面到管理界面
-    def sync_chat_to_kb(kb_name):
-        return gr.update(value=kb_name), update_kb_files_list(kb_name)
-    
-    # 处理文件上传到指定知识库
-    def process_upload_to_kb(files, kb_name):
-        if not kb_name:
-            return "错误：未选择知识库"
-        
-        result = batch_upload_to_kb(files, kb_name)
-        # 更新知识库文件列表
-        files_list = update_kb_files_list(kb_name)
-        return result, files_list
-    
-    # 知识库选择变化时
-    def on_kb_change(kb_name):
-        if not kb_name:
-            return "未选择知识库", "选择知识库查看文件..."
-        
-        kb_dir = os.path.join(KB_BASE_DIR, kb_name)
-        has_index = os.path.exists(os.path.join(kb_dir, "semantic_chunk.index"))
-        status = f"已选择知识库: {kb_name}" + (" (已建立索引)" if has_index else " (未建立索引)")
-        
-        # 更新文件列表
-        files_list = update_kb_files_list(kb_name)
-        
-        return status, files_list
-        
-    # 创建知识库按钮功能
-    create_kb_btn.click(
-        fn=create_kb_and_refresh,
-        inputs=[new_kb_name],
-        outputs=[kb_status, kb_dropdown, kb_dropdown_chat]
-    ).then(
-        fn=lambda: "",  # 清空输入框
-        inputs=[],
-        outputs=[new_kb_name]
-    )
-    
-    # 刷新知识库列表按钮功能
-    refresh_kb_btn.click(
-        fn=refresh_kb_list,
-        inputs=[],
-        outputs=[kb_dropdown, kb_dropdown_chat]
-    )
-    
-    # 删除知识库按钮功能
-    delete_kb_btn.click(
-        fn=delete_kb_and_refresh,
-        inputs=[kb_dropdown],
-        outputs=[kb_status, kb_dropdown, kb_dropdown_chat]
-    ).then(
-        fn=update_kb_files_list,
-        inputs=[kb_dropdown],
-        outputs=[kb_files_list]
-    )
-    
-    # 知识库选择变化时 - 管理界面
-    kb_dropdown.change(
-        fn=on_kb_change,
-        inputs=[kb_dropdown],
-        outputs=[kb_status, kb_files_list]
-    ).then(
-        fn=sync_kb_to_chat,
-        inputs=[kb_dropdown],
-        outputs=[kb_dropdown_chat]
-    )
-    
-    # 知识库选择变化时 - 对话界面
-    kb_dropdown_chat.change(
-        fn=sync_chat_to_kb,
-        inputs=[kb_dropdown_chat],
-        outputs=[kb_dropdown, kb_files_list]
-    )
-    
-    # 处理文件上传
-    file_upload.upload(
-        fn=process_upload_to_kb,
-        inputs=[file_upload, kb_dropdown],
-        outputs=[upload_status, kb_files_list]
-    )
-    
-    # 清空输入按钮功能
-    clear_btn.click(
-        fn=lambda: "",
-        inputs=[],
-        outputs=[question_input]
-    )
-    
-    # 清空对话历史按钮功能
-    def clear_history():
-        return [], []
-    
-    clear_history_btn.click(
-        fn=clear_history,
-        inputs=[],
-        outputs=[chatbot, chat_history_state]
-    )
-    
-    # 提交按钮 - 开始流式处理
-    def update_status(is_processing=True, is_error=False):
-        if is_processing:
-            return '<div class="status-box status-processing">正在处理您的问题...</div>'
-        elif is_error:
-            return '<div class="status-box status-error">处理过程中出现错误</div>'
-        else:
-            return '<div class="status-box status-success">回答已生成完毕</div>'
-    
-    # 处理问题并更新对话历史
-    def process_and_update_chat(question, kb_name, use_search, use_table_format, multi_hop, chat_history):
-        if not question.strip():
-            return chat_history, update_status(False, True), "等待提交问题..."
-        
-        try:
-            # 首先更新聊天界面，显示用户问题
-            chat_history.append([question, "正在思考..."])
-            yield chat_history, update_status(True), f"开始处理您的问题，使用知识库: {kb_name}..."
-            
-            # 用于累积检索状态和答案
-            last_search_display = ""
-            last_answer = ""
-            
-            # 使用生成器进行流式处理
-            for search_display, answer in process_question_with_reasoning(question, kb_name, use_search, use_table_format, multi_hop, chat_history[:-1]):
-                # 更新检索状态和答案
-                last_search_display = search_display
-                last_answer = answer
-                
-                # 更新聊天历史中的最后一条（当前的回答）
-                if chat_history:
-                    chat_history[-1][1] = answer
-                    yield chat_history, update_status(True), search_display
-            
-            # 处理完成，更新状态
-            yield chat_history, update_status(False), last_search_display
-            
-        except Exception as e:
-            # 发生错误时更新状态和聊天历史
-            error_msg = f"处理问题时出错: {str(e)}"
-            if chat_history:
-                chat_history[-1][1] = error_msg
-            yield chat_history, update_status(False, True), f"### 错误\n{error_msg}"
-    
-    # 连接提交按钮
-    submit_btn.click(
-        fn=process_and_update_chat,
-        inputs=[question_input, kb_dropdown_chat, web_search_toggle, table_format_toggle, multi_hop_toggle, chat_history_state],
-        outputs=[chatbot, status_box, search_results_output],
-        queue=True
-    ).then(
-        fn=lambda: "",  # 清空输入框
-        inputs=[],
-        outputs=[question_input]
-    ).then(
-        fn=lambda h: h,  # 更新state
-        inputs=[chatbot],
-        outputs=[chat_history_state]
-    )
-    
-    # 支持Enter键提交
-    question_input.submit(
-        fn=process_and_update_chat,
-        inputs=[question_input, kb_dropdown_chat, web_search_toggle, table_format_toggle, multi_hop_toggle, chat_history_state],
-        outputs=[chatbot, status_box, search_results_output],
-        queue=True
-    ).then(
-        fn=lambda: "",  # 清空输入框
-        inputs=[],
-        outputs=[question_input]
-    ).then(
-        fn=lambda h: h,  # 更新state
-        inputs=[chatbot],
-        outputs=[chat_history_state]
-    )
+# 刷新知识库列表
+def refresh_kb_list():
+    kbs = get_knowledge_bases()
+    # 更新两个下拉菜单
+    return gr.update(choices=kbs, value=kbs[0] if kbs else None), gr.update(choices=kbs, value=kbs[0] if kbs else None)
 
-if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860, share=True)
+# 删除知识库
+def delete_kb_and_refresh(kb_name):
+    result = delete_knowledge_base(kb_name)
+    kbs = get_knowledge_bases()
+    # 更新两个下拉菜单
+    return result, gr.update(choices=kbs, value=kbs[0] if kbs else None), gr.update(choices=kbs, value=kbs[0] if kbs else None)
+
+# 更新知识库文件列表
+def update_kb_files_list(kb_name):
+    if not kb_name:
+        return "未选择知识库"
+    
+    files = get_kb_files(kb_name)
+    kb_dir = os.path.join(KB_BASE_DIR, kb_name)
+    has_index = os.path.exists(os.path.join(kb_dir, "semantic_chunk.index"))
+    
+    if not files:
+        files_str = "知识库中暂无文件"
+    else:
+        files_str = "**文件列表:**\n\n" + "\n".join([f"- {file}" for file in files])
+    
+    index_status = "\n\n**索引状态:** " + ("✅ 已建立索引" if has_index else "❌ 未建立索引")
+    
+    return f"### 知识库: {kb_name}\n\n{files_str}{index_status}"
+
+# 同步知识库选择 - 管理界面到对话界面
+def sync_kb_to_chat(kb_name):
+    return gr.update(value=kb_name)
+
+# 同步知识库选择 - 对话界面到管理界面
+def sync_chat_to_kb(kb_name):
+    return gr.update(value=kb_name), update_kb_files_list(kb_name)
+
+# 处理文件上传到指定知识库
+def process_upload_to_kb(files, kb_name):
+    if not kb_name:
+        return "错误：未选择知识库"
+    
+    result = batch_upload_to_kb(files, kb_name)
+    # 更新知识库文件列表
+    files_list = update_kb_files_list(kb_name)
+    return result, files_list
+
+# # 知识库选择变化时
+# def on_kb_change(kb_name):
+#     if not kb_name:
+#         return "未选择知识库", "选择知识库查看文件..."
+    
+#     kb_dir = os.path.join(KB_BASE_DIR, kb_name)
+#     has_index = os.path.exists(os.path.join(kb_dir, "semantic_chunk.index"))
+#     status = f"已选择知识库: {kb_name}" + (" (已建立索引)" if has_index else " (未建立索引)")
+    
+#     # 更新文件列表
+#     files_list = update_kb_files_list(kb_name)
+    
+#     return status, files_list
+    
+#     # 清空对话历史按钮功能
+# def clear_history():
+#     return [], []
+    
+    
+# # 提交按钮 - 开始流式处理
+# def update_status(is_processing=True, is_error=False):
+#     if is_processing:
+#         return '<div class="status-box status-processing">正在处理您的问题...</div>'
+#     elif is_error:
+#         return '<div class="status-box status-error">处理过程中出现错误</div>'
+#     else:
+#         return '<div class="status-box status-success">回答已生成完毕</div>'
+    
+# # 处理问题并更新对话历史
+# def process_and_update_chat(question, kb_name, use_search, use_table_format, multi_hop, chat_history):
+#         if not question.strip():
+#             return chat_history, update_status(False, True), "等待提交问题..."
+        
+#         try:
+#             # 首先更新聊天界面，显示用户问题
+#             chat_history.append([question, "正在思考..."])
+#             yield chat_history, update_status(True), f"开始处理您的问题，使用知识库: {kb_name}..."
+            
+#             # 用于累积检索状态和答案
+#             last_search_display = ""
+#             last_answer = ""
+            
+#             # 使用生成器进行流式处理
+#             for search_display, answer in process_question_with_reasoning(question, kb_name, use_search, use_table_format, multi_hop, chat_history[:-1]):
+#                 # 更新检索状态和答案
+#                 last_search_display = search_display
+#                 last_answer = answer
+                
+#                 # 更新聊天历史中的最后一条（当前的回答）
+#                 if chat_history:
+#                     chat_history[-1][1] = answer
+#                     yield chat_history, update_status(True), search_display
+            
+#             # 处理完成，更新状态
+#             yield chat_history, update_status(False), last_search_display
+            
+#         except Exception as e:
+#             # 发生错误时更新状态和聊天历史
+#             error_msg = f"处理问题时出错: {str(e)}"
+#             if chat_history:
+#                 chat_history[-1][1] = error_msg
+#             yield chat_history, update_status(False, True), f"### 错误\n{error_msg}"
+    
+
+# if __name__ == "__main__":
+#     demo = gr.Interface(
+#         fn=process_and_update_chat,
+#         inputs=[
+#             gr.Textbox(label="问题", placeholder="请输入问题..."),
+#             gr.Dropdown(label="知识库", choices=[], value=None),
+#             gr.Checkbox(label="使用搜索", value=True),
+#             gr.Checkbox(label="使用表格格式", value=True),
+#             gr.Checkbox(label="多跳推理", value=True),
+#         ]
+#     )
+#     demo.launch(server_name="0.0.0.0", server_port=7860, share=True)

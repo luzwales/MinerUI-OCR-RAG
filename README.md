@@ -1,24 +1,12 @@
 <div align="center">
 
-# MinerU Tianshu 天枢
+# Flex RAG AI
 
 **企业级 AI 数据预处理平台**
 
 支持文档、图片、音频等多模态数据处理 | GPU 加速 | MCP 协议
 
-结合 Vue 3 前端 + FastAPI 后端 + LitServe GPU负载均衡
-
-<p>
-  <a href="https://github.com/magicyuan876/mineru-tianshu/stargazers">
-    <img src="https://img.shields.io/github/stars/magicyuan876/mineru-tianshu?style=for-the-badge&logo=github&color=yellow" alt="Stars"/>
-  </a>
-  <a href="https://github.com/magicyuan876/mineru-tianshu/network/members">
-    <img src="https://img.shields.io/github/forks/magicyuan876/mineru-tianshu?style=for-the-badge&logo=github&color=blue" alt="Forks"/>
-  </a>
-  <a href="https://github.com/magicyuan876/mineru-tianshu/blob/main/LICENSE">
-    <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge" alt="License"/>
-  </a>
-</p>
+结合 Vue 3 + Tailwind CSS + Pinia 前端 + FastAPI 后端 + LitServe GPU负载均衡
 
 <p>
   <img src="https://img.shields.io/badge/Python-3.8+-blue?logo=python&logoColor=white" alt="Python"/>
@@ -30,15 +18,7 @@
 
 [![Verified on MseeP](https://mseep.ai/badge.svg)](https://mseep.ai/app/819ff68b-5154-4717-9361-7db787d5a2f8)
 
-[English](./README_EN.md) | 简体中文
-
-<p>
-  <a href="https://github.com/magicyuan876/mineru-tianshu">
-    <img src="https://img.shields.io/badge/⭐_Star-项目-yellow?style=for-the-badge&logo=github" alt="Star"/>
-  </a>
-</p>
-
-**如果这个项目对你有帮助，请点击右上角 ⭐ Star 支持一下，这是对开发者最大的鼓励！**
+简体中文
 
 </div>
 
@@ -57,6 +37,16 @@
 
 > **⚠️ 实验性功能**：某些特殊水印可能效果不佳，建议先小范围测试。  
 > 📖 **详细说明**：[水印去除优化指南](backend/remove_watermark/README.md)
+
+### 2025-11-8 🎬 利用OCR转换成Markdown和Json文件后导入RAG, 进行知识库问答
+
+- ✅ **UI更新**
+- ✅ **多模型**
+  - Deepseek V3.2
+  - Deepseek V3.1
+  - Deepseek V3
+  - Qwen Plus
+  - Kimi
 
 ### 2025-10-24 🎬 视频处理支持
 
@@ -98,16 +88,9 @@
 - 原生 PDF 多页文档支持，模型自动下载管理
 - 详细文档：[backend/paddleocr_vl/README.md](backend/paddleocr_vl/README.md)
 
-### 2025-10-22
-
-**集成 DeepSeek OCR 高精度引擎**
-
-- 支持多种分辨率和提示词类型配置
-- 详细文档：[backend/deepseek_ocr/README.md](backend/deepseek_ocr/README.md)
-
 ---
 
-## 🌟 项目简介
+## 🌟 项目简介 
 
 MinerU Tianshu（天枢）是一个**企业级 AI 数据预处理平台**，将各种非结构化数据转换为 AI 可用的结构化格式：
 
@@ -139,7 +122,7 @@ MinerU Tianshu（天枢）是一个**企业级 AI 数据预处理平台**，将�
     <td align="center" width="25%">
       <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Desktop%20Computer.png" width="60"/><br/>
       <strong>现代化界面</strong><br/>
-      <sub>Vue 3 + TypeScript + TailwindCSS</sub>
+      <sub>Vue 3 + TypeScript + TailwindCSS + Dark切换 + 多语言</sub>
     </td>
     <td align="center" width="25%">
       <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Electric%20Plug.png" width="60"/><br/>
@@ -162,6 +145,8 @@ MinerU Tianshu（天枢）是一个**企业级 AI 数据预处理平台**，将�
 ## 📸 功能展示
 
 <div align="center">
+
+### 📊 AI -Chat
 
 ### 📊 仪表盘 - 实时监控
 
@@ -196,6 +181,8 @@ MinerU Tianshu（天枢）是一个**企业级 AI 数据预处理平台**，将�
 - ✅ **队列管理**: 系统监控,重置超时任务,清理旧文件
 - ✅ **MCP 协议支持**: 通过 Model Context Protocol 支持 AI 助手调用
 - ✅ **音频识别**: SenseVoice 引擎支持多语言、说话人识别、情感识别
+- Todo **会议录音** : 会议转思维导图
+-  Todo **视频转字幕**： 视频转字幕
 
 ### 支持的文件格式
 
@@ -215,14 +202,18 @@ MinerU Tianshu（天枢）是一个**企业级 AI 数据预处理平台**，将�
 
 ```
 mineru-server/
-├── frontend/               # Vue 3 前端项目
+├── UI    /               # Vue 3 前端项目
 │   ├── src/
 │   │   ├── api/           # API 接口层
+|   |   |—— assets/        # css
 │   │   ├── components/    # 通用组件
+│   │   ├── composables/    # Header组件
+│   │   ├── constants/      # 常量组件
 │   │   ├── layouts/       # 布局组件
-│   │   ├── views/         # 页面组件
-│   │   ├── stores/        # Pinia 状态管理
+│   │   ├── locales/       # 多语言组件
+│   │   ├── pages/         # 页面组件
 │   │   ├── router/        # Vue Router
+│   │   ├── stores/        # Pinia 状态管理
 │   │   └── utils/         # 工具函数
 │   ├── package.json
 │   ├── vite.config.ts
@@ -235,6 +226,15 @@ mineru-server/
 │   │   ├── sensevoice_engine.py  # SenseVoice 引擎
 │   │   ├── check_environment.py  # 环境检查
 │   │   └── README.md      # 音频引擎文档
+│   ├── deepseek_ocr/     # Deepseek_ocr引擎
+│   ├── paddleocr_vl/     # paddleocr_vl引擎
+│   ├── RAG/              # RAG 模块
+│   ├── Models/           # Deepseek_ocr模型文件
+│   ├── remove_watermark/  # 水印移除模块
+│   ├── utils/             # pdf解析成模块
+│   ├── video_engines/     # Vedio/Audio 解析引擎
+│   │   ├── keyframe_extractor.py  # 关键帧解析
+│   │   ├── video_engine.py  # 视频声音解析
 │   ├── litserve_worker.py # Worker Pool
 │   ├── task_scheduler.py  # 任务调度器
 │   ├── mcp_server.py      # MCP 协议服务器（可选）
@@ -252,7 +252,7 @@ mineru-server/
 ### 前置要求
 
 - **Node.js** 18+ (前端)
-- **Python** 3.8+ (后端)
+- **Python** 3.12+ (后端)
 - **CUDA** (可选,用于 GPU 加速)
 
 ### 环境准备（推荐）

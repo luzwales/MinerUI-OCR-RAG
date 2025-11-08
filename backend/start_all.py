@@ -40,6 +40,9 @@ class TianshuLauncher:
         self.enable_mcp = enable_mcp
         self.mcp_port = mcp_port
         self.processes = []
+        # 获取项目根目录
+        self.project_root = Path(Config.project_root).parent
+        self.model_dir = self.project_root / "models" 
 
     def check_ocr_models(self):
         """检查并下载所有 OCR 模型（异步，不阻塞启动）"""
@@ -52,37 +55,35 @@ class TianshuLauncher:
 
                 logger.info("🔍 Checking DeepSeek OCR model...")
 
-                # 获取项目根目录
-                project_root = Path(__file__).parent.parent
-                cache_dir = project_root / "models" / "deepseek_ocr"
+                
 
                 # 检查模型是否已存在
                 model_exists = False
-                local_model_path = cache_dir / "deepseek-ai" / "DeepSeek-OCR"
+                deepseekOCR_model_path = self.model_dir / "deepseek-ai" / "DeepSeek-OCR"
 
-                if local_model_path.exists():
+                if deepseekOCR_model_path.exists():
                     required_files = [
                         "config.json",
                         "tokenizer.json",
                         "modeling_deepseekocr.py",
                         "model-00001-of-000001.safetensors",
                     ]
-                    model_exists = all((local_model_path / f).exists() for f in required_files)
+                    model_exists = all((deepseekOCR_model_path / f).exists() for f in required_files)
 
                     if model_exists:
-                        logger.info(f"✅ DeepSeek OCR model found at: {local_model_path}")
+                        logger.info(f"✅ DeepSeek OCR model found at: {deepseekOCR_model_path}")
                     else:
-                        missing = [f for f in required_files if not (local_model_path / f).exists()]
+                        missing = [f for f in required_files if not (deepseekOCR_model_path / f).exists()]
                         logger.warning(f"⚠️  DeepSeek OCR model incomplete, missing: {missing}")
 
                 if not model_exists:
                     logger.info("📥 DeepSeek OCR model not found, starting download...")
-                    logger.info(f"📁 Download location: {cache_dir}")
+                    logger.info(f"📁 Download location: {deepseekOCR_model_path}")
                     logger.info("⏳ This may take a few minutes (5-10GB)...")
                     logger.info("💡 Tip: Model downloads in background")
 
                     try:
-                        DeepSeekOCREngine(cache_dir=str(cache_dir), auto_download=True)
+                        DeepSeekOCREngine(model_dir=str(self.model_dir), auto_download=True)
                         logger.info("✅ DeepSeek OCR model download completed!")
                     except Exception as e:
                         logger.warning(f"⚠️  DeepSeek OCR model download failed: {e}")
@@ -100,12 +101,12 @@ class TianshuLauncher:
 
                 logger.info("🔍 Checking PaddleOCR-VL...")
                 logger.info("   Note: PaddleOCR-VL models are auto-managed by PaddleOCR")
-                logger.info("   Cache location: ~/.paddleocr/models/")
+                logger.info("   Cache location: ./models/paddleocr")
                 logger.info("   Model will be auto-downloaded on first use (~2GB)")
 
                 # 检查 home 目录的模型缓存
                 home_dir = Path.home()
-                model_cache_dir = home_dir / ".paddleocr" / "models"
+                model_cache_dir = self.model_dir /".paddleocr"/"models"
 
                 if model_cache_dir.exists():
                     logger.info(f"✅ PaddleOCR model cache found at: {model_cache_dir}")

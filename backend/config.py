@@ -1,11 +1,14 @@
+from pathlib import Path
+
 class Config():
+    project_root = str(Path(__file__).resolve().parent.parent)
 
     #retrievor参数
     topd = 3    #召回文章的数量
     topt = 6    #召回文本片段的数量
     maxlen = 128  #召回文本片段的长度
     topk = 5    #query召回的关键词数量
-    bert_path = '/workspace/models/embedding/tao-8k' #本地bert模型路径
+    bert_path = '{project_root}/backend/models/embedding/tao-8k' #本地bert模型路径
     recall_way = 'embed'  #召回方式 ,keyword,embed
 
     #generator参数
@@ -27,10 +30,10 @@ class Config():
     llm_model = "qwen-plus"  # 默认使用的LLM模型
 
     # 知识库配置
-    kb_base_dir = "knowledge_bases"  # 知识库根目录
+    kb_base_dir = f"{project_root}/backend/knowledge_bases"  # 知识库根目录
     default_kb = "default"  # 默认知识库名称
 
     # 输出目录配置 - 现在用作临时文件目录
-    output_dir = "output_files"
+    output_dir = f"{project_root}/backend/output_files"
 
-    ocr_output_dir = "ocr_output_files"
+    ocr_output_dir = f"{project_root}/backend/ocr_output_files"

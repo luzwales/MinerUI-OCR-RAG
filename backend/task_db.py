@@ -6,17 +6,19 @@ MinerU Tianshu - SQLite Task Database Manager
 """
 
 import sqlite3
+import pathlib
 import json
 import uuid
 from contextlib import contextmanager
 from typing import Optional, List, Dict
 from pathlib import Path
 
+project_root = str(Path(__file__).resolve().parent.parent)
 
 class TaskDB:
     """任务数据库管理类"""
 
-    def __init__(self, db_path="mineru_tianshu.db"):
+    def __init__(self, db_path=f"{project_root}/db/mineru_tianshu.db"):
         self.db_path = db_path
         self._init_db()
 
@@ -75,6 +77,140 @@ class TaskDB:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_priority ON tasks(priority DESC)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_created_at ON tasks(created_at)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_worker_id ON tasks(worker_id)")
+
+             # 初始化知识库表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS knowledge_bases (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    kb_name TEXT NOT NULL UNIQUE,
+                    system_prompt TEXT DEFAULT '',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_by TEXT DEFAULT 'system',
+                    updated_by TEXT DEFAULT 'system'
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_kb_name ON knowledge_bases(kb_name)")
+
+    # 添加知识库相关方法
+    def create_knowledge_base(self, kb_name: str, system_prompt: str = '', created_by: str = 'system') -> bool:
+        """
+        创建知识库记录
+
+        Args:
+            kb_name: 知识库名称
+            system_prompt: 系统提示词
+            created_by: 创建者
+
+        Returns:
+            bool: 创建是否成功
+        """
+        try:
+            with self.get_cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO knowledge_bases (kb_name, system_prompt, created_by)
+                    VALUES (?, ?, ?)
+                """,
+                    (kb_name, system_prompt, created_by)
+                )
+            return True
+        except sqlite3.IntegrityError:
+            # 知识库名称已存在
+            return False
+        except Exception as e:
+            print(f"创建知识库记录失败: {str(e)}")
+            return False
+
+    def get_knowledge_bases(self) -> List[Dict]:
+        """
+        获取所有知识库记录
+
+        Returns:
+            List[Dict]: 知识库记录列表
+        """
+        try:
+            with self.get_cursor() as cursor:
+                cursor.execute("SELECT * FROM knowledge_bases ORDER BY created_at ASC")
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"获取知识库列表失败: {str(e)}")
+            return []
+
+    def delete_knowledge_base(self, kb_name: str) -> bool:
+        """
+        删除知识库记录
+
+        Args:
+            kb_name: 知识库名称
+
+        Returns:
+            bool: 删除是否成功
+        """
+        try:
+            with self.get_cursor() as cursor:
+                cursor.execute("DELETE FROM knowledge_bases WHERE kb_name = ?", (kb_name,))
+                return cursor.rowcount > 0
+        except Exception as e:
+            print(f"删除知识库记录失败: {str(e)}")
+            return False
+
+    def update_knowledge_base(self, kb_name: str, system_prompt: str = None,updated_by: str = 'system') -> bool:
+        """
+        更新知识库记录
+
+        Args:
+            kb_name: 知识库名称
+            system_prompt: 系统提示词
+            updated_by: 更新者
+
+        Returns:
+            bool: 更新是否成功
+        """
+        try:
+            with self.get_cursor() as cursor:
+                if system_prompt is not None:
+                    cursor.execute(
+                        """
+                        UPDATE knowledge_bases
+                        SET system_prompt = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ?
+                        WHERE kb_name = ?
+                    """,
+                        (system_prompt, updated_by, kb_name)
+                    )
+                else:
+                    # 如果没有提供system_prompt，只更新updated_at和updated_by
+                    cursor.execute(
+                        """
+                        UPDATE knowledge_bases
+                        SET updated_at = CURRENT_TIMESTAMP, updated_by = ?
+                        WHERE kb_name = ?
+                    """,
+                        (updated_by, kb_name)
+                    )
+                return cursor.rowcount > 0
+        except Exception as e:
+            print(f"更新知识库记录失败: {str(e)}")
+            return False
+
+    def get_knowledge_base_by_name(self, kb_name: str) -> Optional[Dict]:
+        """
+        根据名称获取知识库记录
+
+        Args:
+            kb_name: 知识库名称
+
+        Returns:
+            Dict: 知识库记录，如果不存在返回None
+        """
+        try:
+            with self.get_cursor() as cursor:
+                cursor.execute("SELECT * FROM knowledge_bases WHERE kb_name = ?", (kb_name,))
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            print(f"获取知识库记录失败: {str(e)}")
+            return None
 
     def create_task(
         self, file_name: str, 
