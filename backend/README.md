@@ -1,4 +1,4 @@
-# MinerU Tianshu 后端
+# 基于开源项目MinerU Tianshu 后端
 
 企业级 AI 数据预处理平台后端，基于 FastAPI + LitServe 构建。
 
@@ -11,6 +11,8 @@
 ```bash
 cd backend
 pip install -r requirements.txt
+//激活虚拟环境
+source venv/bin/activate
 ```
 
 ### 启动服务
@@ -19,6 +21,11 @@ pip install -r requirements.txt
 
 ```bash
 python start_all.py
+
+#云中启动容易报错后，端口容易继续占用，需要手动kill端口
+kill -9 $(lsof -t -i:9000)
+kill -9 $(lsof -t -i:8000)
+#运行中，哪个localhost:9000不能关闭client，否则会报错
 
 # 启用 MCP 协议支持（用于 AI 助手调用）
 python start_all.py --enable-mcp
@@ -47,6 +54,26 @@ python task_scheduler.py --enable-scheduler
 
 ```
 backend/
+│——audio_engines
+│   ├──sensevoice_engine.py # 音频解析
+│——db
+│   ├──flex_qualityAI.db    # Sqlite数据库
+│——deepseek_ocr
+│   ├──engine.py            # deepseek OCR 解析
+│——knowledge_bases
+│   ├──default              # 默认知识库，这里每个知识库会建立一个单独文件夹
+│——ocr_output_files         # OCR识别文档中间临时文件，存储图片，markdown之类
+│——output_files             # 知识库切片向量文件传入文件夹
+│——paddleocr_vl
+│   ├──engine.py            # paddleocr_vl 解析
+│——rag
+│   ├──rag.py               # rag 模块主函数 解析
+│   ├──ragv2.py             # rag 相关model设置及启动
+│   ├──retrievor.py         # 知识库问答调参设置
+│   ├──text2vec.py          # 文本向量化
+│——remove_watermark         # 移除水印
+│——utils                    # 函数放置区
+│——video_engines            # 视频解析
 ├── api_server.py           # FastAPI API 服务器
 ├── task_db.py              # SQLite 数据库管理
 ├── litserve_worker.py      # LitServe Worker Pool
@@ -179,6 +206,64 @@ POST /api/v1/admin/reset-stale?timeout_minutes=60
     "success": true,
     "reset_count": 2,
     "message": "Reset tasks processing for more than 60 minutes"
+  }
+```
+#### 获取知识库清单
+
+```
+POST /api/kbs
+
+返回:
+  {
+    "success": true,
+    "kbs": List(dict)
+  }
+```
+
+#### 新增知识库
+
+```
+POST /api/kb?kb_name=default&system_prompt=
+
+返回:
+  {
+    "success": true,
+    "message": message
+  }
+```
+#### 获取每个知识库
+
+```
+GET /api/kb/{kb_name}
+
+返回:
+  {
+    "success": true,
+    "message": [RAG]
+  }
+```
+#### 更新知识库
+
+```
+update /api/kb/{kb_name}?system_prompt=
+
+返回:
+  {
+    "success": true,
+    "message": message,
+  }
+```
+
+#### 获取知识库下面上传了多少文件
+
+```
+GET /api/kb/{kb_name}/files
+
+返回:
+  {
+    "success": true,
+    "files":files,
+    "has_index": has_index,
   }
 ```
 

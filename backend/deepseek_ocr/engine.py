@@ -55,7 +55,7 @@ class DeepSeekOCREngine:
             if cache_dir is None:
                 # 获取项目根目录（backend 的父目录）
                 project_root = Path(__file__).parent.parent.parent
-                self.cache_dir = str(project_root / "models" / "deepseek_ocr")
+                self.cache_dir = str(project_root / "models")
             else:
                 self.cache_dir = cache_dir
 

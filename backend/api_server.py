@@ -7,6 +7,8 @@ MinerU Tianshu - API Server
 提供 RESTful API 接口用于任务提交、查询和管理
 """
 
+from typing import Optional, List  # 添加List类型
+# 修复导入顺序和路径
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,17 +23,29 @@ import sys
 import re
 import uuid
 from minio import Minio
-import RAG.rag as rag  # 新增：导入 RAG 模块
+
+from rag import (
+    get_knowledge_bases,
+    create_knowledge_base,
+    update_knowledge_base,
+    delete_knowledge_base,
+    get_kb_files,
+    ask_question_parallel,
+    process_and_index_files,
+    batch_upload_to_kb,
+    simple_generate_answer,
+    multi_hop_generate_answer,
+    get_kb_paths,
+)
+# 先添加路径到sys.path，然后再导入模块
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'rag')))
 from config import Config  # 导入配置文件
 
+# 其他导入保持不变
 import torch
 from transformers import AutoModel, AutoTokenizer
 from PIL import Image
-import uvicorn
-from decouple import config as env_config
-
-
+# from decouple import config as env_config
 from task_db import TaskDB
 
 # 初始化 FastAPI 应用
@@ -151,7 +165,7 @@ async def root():
     }
 
 
-@app.post("/api/v1/tasks/submit")
+@app.post("/api/tasks/submit")
 async def submit_task(
     file: UploadFile = File(..., description="Document: PDF/Picture/Office/HTML/Audio/Video ect."),
     backend: str = Form(
@@ -244,7 +258,7 @@ async def submit_task(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/v1/tasks/{task_id}")
+@app.get("/api/tasks/{task_id}")
 async def get_task_status(
     task_id: str,
     upload_images: bool = Query(False, description="是否上传图片到MinIO并替换链接（仅当任务完成时有效）"),
@@ -378,7 +392,7 @@ async def get_task_status(
     return response
 
 
-@app.delete("/api/v1/tasks/{task_id}")
+@app.delete("/api/tasks/{task_id}")
 async def cancel_task(task_id: str):
     """
     取消任务（仅限 pending 状态）
@@ -402,7 +416,7 @@ async def cancel_task(task_id: str):
         raise HTTPException(status_code=400, detail=f"Cannot cancel task in {task['status']} status")
 
 
-@app.get("/api/v1/queue/stats")
+@app.get("/api/queue/stats")
 async def get_queue_stats():
     """
     获取队列统计信息
@@ -418,16 +432,17 @@ async def get_queue_stats():
 async def list_kbs():
     """列出所有知识库"""
     try:
-        kbs = rag.get_knowledge_bases()
+        kbs = get_knowledge_bases()
         return {"success": True, "kbs": kbs}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/kb")
 async def create_kb(kb_name: str = Form(...),system_prompt: str = Form(...)):
     """创建知识库"""
     try:
-        res = rag.create_knowledge_base(kb_name=kb_name, system_prompt=system_prompt)
+        res =create_knowledge_base(kb_name=kb_name, system_prompt=system_prompt)
         return {"success": True, "message": res}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -436,16 +451,16 @@ async def create_kb(kb_name: str = Form(...),system_prompt: str = Form(...)):
 async def delete_kb(kb_name: str):
     """删除知识库"""
     try:
-        res = rag.delete_knowledge_base(kb_name)
+        res = delete_knowledge_base(kb_name)
         return {"success": True, "message": res}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
-@app.update("/api/kb/{kb_name}")
+@app.put("/api/kb/{kb_name}")
 async def update_kb(kb_name: str, system_prompt: str = Form(...),updated_by: str = Form(...)):
     """更新知识库"""
     try:
-        res = rag.update_knowledge_base(kb_name, system_prompt,updated_by)
+        res = update_knowledge_base(kb_name, system_prompt,updated_by)
         return {"success": True, "message": res}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -454,8 +469,8 @@ async def update_kb(kb_name: str, system_prompt: str = Form(...),updated_by: str
 async def list_kb_files(kb_name: str):
     """列出指定知识库中的文件和索引状态"""
     try:
-        files = rag.get_kb_files(kb_name)
-        kb_dir = os.path.join(rag.KB_BASE_DIR, kb_name)
+        files = get_kb_files(kb_name)
+        kb_dir = os.path.join(Config.kb_base_dir, kb_name)
         has_index = os.path.exists(os.path.join(kb_dir, "semantic_chunk.index"))
         return {"success": True, "files": files, "has_index": has_index}
     except Exception as e:
@@ -483,7 +498,7 @@ async def upload_files_to_kb(kb_name: str, files: List[UploadFile] = File(...)):
                 tmpf.write(content)
                 tmp_paths.append(tmpf.name)
         # 调用 rag 模块进行处理（支持文件路径列表）
-        result = rag.process_and_index_files(tmp_paths, kb_name)
+        result = process_and_index_files(tmp_paths, kb_name)
         return {"success": True, "message": result}
     except HTTPException:
         raise
@@ -500,7 +515,7 @@ async def upload_files_to_kb(kb_name: str, files: List[UploadFile] = File(...)):
 @app.post("/api/rag/ask")
 async def rag_ask(
     question: str = Form(...),
-    kb_name: str = Form(rag.DEFAULT_KB),
+    kb_name: str = Form(Config.default_kb),
     use_search: bool = Form(True),
     use_table_format: bool = Form(False),
     multi_hop: bool = Form(False),
@@ -521,7 +536,7 @@ async def rag_ask(
     """
     try:
         # 使用 rag.ask_question_parallel（内部会根据 multi_hop/use_search 决定策略）
-        answer = rag.ask_question_parallel(
+        answer = ask_question_parallel(
             question, 
             kb_name=kb_name, 
             system_prompt=system_prompt,
@@ -535,7 +550,7 @@ async def rag_ask(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/v1/queue/tasks")
+@app.get("/api/queue/tasks")
 async def list_tasks(
     status: Optional[str] = Query(None, description="筛选状态: pending/processing/completed/failed"),
     limit: int = Query(100, description="返回数量限制", le=1000),
@@ -561,7 +576,7 @@ async def list_tasks(
     return {"success": True, "count": len(tasks), "tasks": tasks}
 
 
-@app.post("/api/v1/admin/cleanup")
+@app.post("/api/admin/cleanup")
 async def cleanup_old_tasks(days: int = Query(7, description="清理N天前的任务")):
     """
     清理旧任务记录（管理接口）
@@ -573,7 +588,7 @@ async def cleanup_old_tasks(days: int = Query(7, description="清理N天前的�
     return {"success": True, "deleted_count": deleted_count, "message": f"Cleaned up tasks older than {days} days"}
 
 
-@app.post("/api/v1/admin/reset-stale")
+@app.post("/api/admin/reset-stale")
 async def reset_stale_tasks(timeout_minutes: int = Query(60, description="超时时间（分钟）")):
     """
     重置超时的 processing 任务（管理接口）
@@ -589,7 +604,7 @@ async def reset_stale_tasks(timeout_minutes: int = Query(60, description="超时
     }
 
 
-@app.get("/api/v1/health")
+@app.get("/api/health")
 async def health_check():
     """
     健康检查接口

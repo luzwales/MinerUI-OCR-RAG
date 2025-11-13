@@ -1,7 +1,7 @@
 from pathlib import Path
 
 class Config():
-    project_root = str(Path(__file__).resolve().parent.parent)
+    project_root = str(Path(__file__).resolve().parent)
 
     #retrievor参数
     topd = 3    #召回文章的数量

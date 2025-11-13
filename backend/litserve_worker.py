@@ -990,7 +990,7 @@ def start_litserve_workers(
         enable_worker_loop: 是否启用 worker 自动循环拉取任务
     """
     logger.info("=" * 60)
-    logger.info("🚀 Starting MinerU Tianshu LitServe Worker Pool")
+    logger.info("🚀 Starting Flex AI LitServe Worker Pool")
     logger.info("=" * 60)
     logger.info(f"📂 Output Directory: {output_dir}")
     logger.info(f"🎮 Accelerator: {accelerator}")

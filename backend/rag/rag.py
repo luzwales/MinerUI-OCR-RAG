@@ -1,4 +1,5 @@
-from asyncio.windows_events import NULL
+NULL = None
+import faiss
 import torch
 import faiss
 import numpy as np

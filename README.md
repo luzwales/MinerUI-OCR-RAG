@@ -146,19 +146,33 @@ MinerU Tianshu（天枢）是一个**企业级 AI 数据预处理平台**，将�
 
 <div align="center">
 
+📊 后端接口
+
+<img src="./docs/img/WebApi.png" alt="仪表盘" width="60%"/>
+
+📊 UI display
+
+<img src="./docs/img/RAG.gif" alt="仪表盘" width="80%"/>
+
 ### 📊 AI -Chat
 
-### 📊 仪表盘 - 实时监控
+<img src="./docs/img/chat_dark.png" alt="仪表盘" width="80%"/>
 
-<img src="./docs/img/dashboard.png" alt="仪表盘" width="80%"/>
+### 📊 仪表盘 - 实时监控--dark
+
+<img src="./docs/img/Task Dashbard_dark-cn.png" alt="仪表盘" width="80%"/>
+
+📊 仪表盘 - 实时监控--light
+
+<img src="./docs/img/Task Dashbard_light.png" alt="仪表盘" width="80%"/>
 
 *实时监控队列统计和最近任务*
 
 ---
 
-### 📤 任务提交 - 文件拖拽上传
+### 📤 任务提交 - 文件拖拽上传-dark
 
-<img src="./docs/img/submit.png" alt="任务提交" width="80%"/>
+<img src="./docs/img/create Task_dark.png" alt="任务提交" width="80%"/>
 
 *支持批量处理和高级配置*
 
@@ -166,9 +180,29 @@ MinerU Tianshu（天枢）是一个**企业级 AI 数据预处理平台**，将�
 
 ### ⚙️ 队列管理 - 系统监控
 
-<img src="./docs/img/tasks.png" alt="队列管理" width="80%"/>
+- dark
+
+<img src="./docs/img/Queue Dark_cn.png" alt="队列管理" width="80%"/>
+
+- light
+
+<img src="./docs/img/Queue light.png" alt="队列管理" width="80%"/>
 
 *重置超时任务、清理旧文件*
+
+
+
+⚙️RAG管理 
+
+- dark
+
+  <img src="./docs/img/rag_dark.png" alt="队列管理" width="80%"/>
+
+  - light
+
+    <img src="./docs/img/rag_light.png" alt="队列管理" width="80%"/>
+
+
 
 </div>
 

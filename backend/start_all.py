@@ -68,6 +68,13 @@ class TianshuLauncher:
                         "modeling_deepseekocr.py",
                         "model-00001-of-000001.safetensors",
                     ]
+                    # 先初始化model_exists为True，再检查每个文件
+                    model_exists = True
+                    for f in required_files:
+                        if not (deepseekOCR_model_path / f).exists():
+                            model_exists = False
+                            logger.warning(f"⚠️  DeepSeek OCR model missing file: {deepseekOCR_model_path / f}")
+                            break
                     model_exists = all((deepseekOCR_model_path / f).exists() for f in required_files)
 
                     if model_exists:
@@ -78,7 +85,7 @@ class TianshuLauncher:
 
                 if not model_exists:
                     logger.info("📥 DeepSeek OCR model not found, starting download...")
-                    logger.info(f"📁 Download location: {deepseekOCR_model_path}")
+                    logger.info(f"📁 A Download location: {deepseekOCR_model_path}")
                     logger.info("⏳ This may take a few minutes (5-10GB)...")
                     logger.info("💡 Tip: Model downloads in background")
 
@@ -105,7 +112,7 @@ class TianshuLauncher:
                 logger.info("   Model will be auto-downloaded on first use (~2GB)")
 
                 # 检查 home 目录的模型缓存
-                home_dir = Path.home()
+                # home_dir = Path.home()
                 model_cache_dir = self.model_dir /".paddleocr"/"models"
 
                 if model_cache_dir.exists():
@@ -304,9 +311,10 @@ class TianshuLauncher:
 
                 # 检查进程状态
                 for name, proc in self.processes:
+                    logger.info(f"   {name} status: {'Running' if proc.poll() is None else 'Stopped'} (PID: {proc.pid})")
                     if proc.poll() is not None:
                         logger.error(f"❌ {name} unexpectedly stopped!")
-                        self.stop_services()
+                        # self.stop_services()
                         return
 
         except KeyboardInterrupt:

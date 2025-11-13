@@ -18,7 +18,7 @@ project_root = str(Path(__file__).resolve().parent.parent)
 class TaskDB:
     """任务数据库管理类"""
 
-    def __init__(self, db_path=f"{project_root}/db/mineru_tianshu.db"):
+    def __init__(self, db_path=f"{project_root}/backend/db/flex_qualityAI.db"):
         self.db_path = db_path
         self._init_db()
 
